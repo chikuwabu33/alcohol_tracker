@@ -1,0 +1,69 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend.Dockerfile
+    container_name: alcohol-backend
+    ports:
+      - "8001:8000"
+    volumes:
+      - ./app:/app
+      - /app/__pycache__
+    environment:
+      - DEBUG=True
+      - PYTHONUNBUFFERED=1
+      - DATABASE_URL=postgresql://user:password@db:5432/alcohol_db
+    command: uvicorn src.backend:app --host 0.0.0.0 --port 8000 --reload
+    networks:
+      - alcohol-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend.Dockerfile
+    container_name: alcohol-frontend
+    ports:
+      - "8502:8501"
+    volumes:
+      - ./app:/app
+      - /app/__pycache__
+    environment:
+      - DEBUG=True
+      - PYTHONUNBUFFERED=1
+      - BACKEND_URL=http://backend:8000
+    command: streamlit run src/frontend.py --server.port 8501 --server.address 0.0.0.0
+    networks:
+      - alcohol-network
+    depends_on:
+      backend:
+        condition: service_healthy
+
+  db:
+    image: postgres:15-alpine
+    container_name: alcohol-db
+    environment:
+      - POSTGRES_USER=user
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=alcohol_db
+    ports:
+      - "5433:5432"
+    networks:
+      - alcohol-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d alcohol_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+networks:
+  alcohol-network:
+    driver: bridge
