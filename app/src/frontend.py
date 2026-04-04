@@ -75,15 +75,16 @@ def delete_alcohol_master(alc_id):
         return False
 
 # ⭐ HTMLクリック用
-def calendar_button(day, alc, color, date_str):
+def calendar_button(day, alc, color, date_str, is_today=False):
     label = f"<b>{day}</b><br><small>{alc:.1f}g</small>"
+    border_style = "2px solid #FF0000" if is_today else "1px solid #aaa"
     return f"""
     <form action="" method="get">
         <button name="selected" value="{date_str}" 
         style="
             width:100%;
             height:70px;
-            border:1px solid #aaa;
+            border:{border_style};
             border-radius:10px;
             background:{color};
             color:#333;
@@ -97,14 +98,19 @@ def calendar_button(day, alc, color, date_str):
 
 monthly_data = fetch_monthly_data(year, month)
 total_month_alc = sum(d["total_pure_alcohol"] for d in monthly_data.values())
+num_days = calendar.monthrange(year, month)[1]
+avg_month_alc = total_month_alc / num_days
 
 # タイトルと今月の総純アルコール量を横並びに表示
-col_title, col_metric = st.columns([2, 1])
+col_title, col_total, col_avg = st.columns([2, 1, 1])
 with col_title:
     st.title("🍺 Alcohol Tracker")
-with col_metric:
+with col_total:
     st.metric("今月の総純アルコール量", f"{total_month_alc:.1f} g")
-    st.info("**計算式:** 量(ml) × (度数/100) × 0.8")
+with col_avg:
+    st.metric("1日あたりの平均", f"{avg_month_alc:.1f} g")
+
+st.info("**純アルコール量計算式:** 量(ml) × (度数/100) × 0.8")
 
 alcohol_masters = fetch_alcohol_masters()
 master_options = {m["name"]: m for m in alcohol_masters}
@@ -131,6 +137,7 @@ for week in cal:
         else:
             curr_date = date(year, month, day)
             date_str = str(curr_date)
+            is_today = (curr_date == today)
 
             data = monthly_data.get(date_str)
             alc = data["total_pure_alcohol"] if data else 0.0
@@ -138,7 +145,7 @@ for week in cal:
             limit = float(st.session_state.daily_limit)
             color = get_color_style(alc, limit)
 
-            html = calendar_button(day, alc, color, date_str)
+            html = calendar_button(day, alc, color, date_str, is_today=is_today)
             cols[i].markdown(html, unsafe_allow_html=True)
 
 # ===== 以下は元コードほぼそのまま =====
