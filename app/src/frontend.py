@@ -64,15 +64,15 @@ def fetch_alcohol_masters():
 
 def save_alcohol_master(name, percent, default_ml):
     try:
-        requests.post(f"{BACKEND_URL}/alcohols", json={"name": name, "percent": percent, "default_ml": default_ml})
-        return True
+        res = requests.post(f"{BACKEND_URL}/alcohols", json={"name": name, "percent": percent, "default_ml": default_ml})
+        return res.status_code == 200
     except:
         return False
 
 def delete_alcohol_master(alc_id):
     try:
-        requests.delete(f"{BACKEND_URL}/alcohols/{alc_id}")
-        return True
+        res = requests.delete(f"{BACKEND_URL}/alcohols/{alc_id}")
+        return res.status_code == 200
     except:
         return False
 
@@ -101,7 +101,7 @@ def calendar_button(day, alc, color, date_str, is_today=False):
 monthly_data = fetch_monthly_data(year, month)
 total_month_alc = sum(d["total_pure_alcohol"] for d in monthly_data.values())
 num_days = calendar.monthrange(year, month)[1]
-avg_month_alc = total_month_alc / num_days
+avg_month_alc = total_month_alc / num_days if num_days > 0 else 0
 
 # タイトルと今月の総純アルコール量を横並びに表示
 col_title, col_total, col_avg = st.columns([2, 1, 1])
@@ -237,6 +237,7 @@ def handle_master_registration():
             st.session_state.master_name_input = ""
             fetch_alcohol_masters.clear()
             st.query_params.clear()
+            st.session_state.master_reg_error = None
         else:
             st.session_state.master_reg_error = "保存に失敗しました"
     else:
