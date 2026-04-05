@@ -18,10 +18,10 @@ def load_settings():
     if os.path.exists(SETTINGS_FILE):
         try:
             with open(SETTINGS_FILE, "r") as f:
-                return json.load(f).get("daily_limit", 20.0)
+                return json.load(f).get("daily_limit", 20)
         except:
             pass
-    return 20.0
+    return 20
 
 if "daily_limit" not in st.session_state:
     st.session_state.daily_limit = load_settings()
@@ -42,6 +42,7 @@ def get_color_style(alc, limit):
     g = int(230 * (1 - ratio))
     return f"rgba({r}, {g}, 0, 0.6)"
 
+@st.cache_data
 def fetch_monthly_data(y, m):
     try:
         res = requests.get(f"{BACKEND_URL}/intakes", params={"year": y, "month": m})
@@ -51,6 +52,7 @@ def fetch_monthly_data(y, m):
         st.error("バックエンドに接続できません")
     return {}
 
+@st.cache_data
 def fetch_alcohol_masters():
     try:
         res = requests.get(f"{BACKEND_URL}/alcohols")
@@ -60,9 +62,9 @@ def fetch_alcohol_masters():
         pass
     return []
 
-def save_alcohol_master(name, percent, ml):
+def save_alcohol_master(name, percent, default_ml):
     try:
-        requests.post(f"{BACKEND_URL}/alcohols", json={"name": name, "percent": percent, "ml": ml})
+        requests.post(f"{BACKEND_URL}/alcohols", json={"name": name, "percent": percent, "default_ml": default_ml})
         return True
     except:
         return False
@@ -76,7 +78,7 @@ def delete_alcohol_master(alc_id):
 
 # ⭐ HTMLクリック用
 def calendar_button(day, alc, color, date_str, is_today=False):
-    label = f"<b>{day}</b><br><small>{alc:.1f}g</small>"
+    label = f"<b>{day}</b><br><small>{int(alc)}g</small>"
     border_style = "2px solid #FF0000" if is_today else "1px solid #aaa"
     return f"""
     <form action="" method="get">
@@ -106,9 +108,9 @@ col_title, col_total, col_avg = st.columns([2, 1, 1])
 with col_title:
     st.title("🍺 Alcohol Tracker")
 with col_total:
-    st.metric("今月の総純アルコール量", f"{total_month_alc:.1f} g")
+    st.metric("今月の総純アルコール量", f"{int(total_month_alc)} g")
 with col_avg:
-    st.metric("1日あたりの平均", f"{avg_month_alc:.1f} g")
+    st.metric("1日あたりの平均", f"{int(avg_month_alc)} g")
 
 st.info("**純アルコール量計算式:** 量(ml) × (度数/100) × 0.8")
 
@@ -128,6 +130,8 @@ for i, d in enumerate(days):
 params = st.query_params
 if "selected" in params:
     st.session_state.selected_date = date.fromisoformat(params["selected"])
+else:
+    st.session_state.selected_date = None
 
 for week in cal:
     cols = st.columns(7)
@@ -142,7 +146,7 @@ for week in cal:
             data = monthly_data.get(date_str)
             alc = data["total_pure_alcohol"] if data else 0.0
 
-            limit = float(st.session_state.daily_limit)
+            limit = st.session_state.daily_limit
             color = get_color_style(alc, limit)
 
             html = calendar_button(day, alc, color, date_str, is_today=is_today)
@@ -162,12 +166,10 @@ if st.session_state.selected_date:
         c1, c2 = st.columns([3, 1])
 
         default_name = "-- 選択してください --"
-        default_count = 0
 
         if i < len(existing_data):
-            default_count = int(existing_data[i]["count"])
             for name, m in master_options.items():
-                if m["percent"] == existing_data[i]["percent"] and m["ml"] == existing_data[i]["ml"]:
+                if m["percent"] == existing_data[i]["percent"]:
                     default_name = name
                     break
 
@@ -178,11 +180,16 @@ if st.session_state.selected_date:
             key=f"name_{i}"
         )
 
-        cnt = c2.number_input("個数", min_value=0, step=1, value=default_count, key=f"cnt_{i}")
-
-        if selected_name != "-- 選択してください --" and cnt > 0:
+        input_ml = 0
+        if selected_name != "-- 選択してください --":
             m = master_options[selected_name]
-            items.append({"percent": m["percent"], "ml": m["ml"], "count": cnt})
+            # 保存データがあれば優先、なければマスタの登録量を初期値にする
+            val = int(existing_data[i]["ml"]) if i < len(existing_data) else int(m["default_ml"])
+            input_ml = c2.number_input("量(ml)", min_value=0, step=1, value=int(val), key=f"ml_input_{i}")
+
+        if selected_name != "-- 選択してください --" and input_ml > 0:
+            m = master_options[selected_name]
+            items.append({"percent": int(m["percent"]), "ml": int(input_ml)})
 
     c_save, c_cancel = st.columns(2)
 
@@ -190,6 +197,7 @@ if st.session_state.selected_date:
         try:
             res = requests.post(f"{BACKEND_URL}/intakes", json={"date": str(selected_date), "items": items})
             if res.status_code == 200:
+                fetch_monthly_data.clear() # キャッシュをクリア
                 st.session_state.selected_date = None
                 st.query_params.clear()
                 st.rerun()
@@ -209,29 +217,41 @@ st.sidebar.info(""" 背景色がオレンジの日は目標の純アルコール
 
 st.sidebar.number_input(
     "1日の純アルコール限度 (g)",
-    min_value=1.0,
-    step=1.0,
+    min_value=1,
+    step=1,
     key="daily_limit",
     on_change=save_settings
 )
 
 st.sidebar.divider()
+def handle_master_registration():
+    """マスタ登録ボタンのコールバック処理"""
+    name = st.session_state.get("master_name_input")
+    pct = st.session_state.get("master_pct_input")
+    def_ml = st.session_state.get("master_def_ml_input")
+    
+    if name:
+        full_name = f"{name}({pct}%)"
+        if save_alcohol_master(full_name, pct, def_ml):
+            # コールバック内であれば、ウィジェットに紐づく値を安全にリセット可能
+            st.session_state.master_name_input = ""
+            fetch_alcohol_masters.clear()
+            st.query_params.clear()
+        else:
+            st.session_state.master_reg_error = "保存に失敗しました"
+    else:
+        st.session_state.master_reg_error = "名前を入力してください"
+
 with st.sidebar.expander("📝 お酒のマスタ設定"):
-    with st.form("add_alcohol"):
-        new_name = st.text_input("お酒の名前")
-        new_pct = st.number_input("度数 (%)", min_value=0.0, max_value=100.0, value=5.0)
-        new_ml = st.number_input("量 (ml)", min_value=0.0, step=10.0, value=350.0)
-        if st.form_submit_button("登録/更新"):
-            if new_name:
-                # 名称に度数と量を自動的に付与 (例: ビール(5%)(350ml))
-                p_str = int(new_pct) if new_pct.is_integer() else new_pct
-                m_str = int(new_ml) if new_ml.is_integer() else new_ml
-                full_name = f"{new_name}({p_str}%,{m_str}ml)"
-                
-                if save_alcohol_master(full_name, new_pct, new_ml):
-                    st.rerun()
-            else:
-                st.error("名前を入力してください")
+    st.text_input("お酒の名前", key="master_name_input")
+    st.number_input("度数 (%)", value=5, step=1, key="master_pct_input")
+    st.number_input("デフォルトの量 (ml)", value=350, step=1, key="master_def_ml_input")
+    st.button("登録", use_container_width=True, on_click=handle_master_registration)
+    
+    # エラーメッセージがある場合は表示し、その後クリアする
+    if st.session_state.get("master_reg_error"):
+        st.error(st.session_state.master_reg_error)
+        st.session_state.master_reg_error = None
 
     if alcohol_masters:
         st.write("登録済みリスト:")
@@ -240,4 +260,6 @@ with st.sidebar.expander("📝 お酒のマスタ設定"):
             col1.write(m['name'])
             if col2.button("🗑️", key=f"del_{m['id']}"):
                 if delete_alcohol_master(m["id"]):
+                    fetch_alcohol_masters.clear() # キャッシュをクリア
+                    st.query_params.clear()
                     st.rerun()

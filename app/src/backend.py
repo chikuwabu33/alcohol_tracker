@@ -7,19 +7,20 @@ from pydantic import BaseModel
 from .database import engine, get_db, Base
 from .models import DailyIntake, AlcoholMaster
 
+# スキーマ変更を反映させるため、一時的にテーブルを削除して再作成する
+#Base.metadata.drop_all(bind=engine) 
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
 
 class AlcoholItem(BaseModel):
-    percent: float
-    ml: float
-    count: int
+    percent: int
+    ml: int
 
 class AlcoholMasterBase(BaseModel):
     name: str
-    percent: float
-    ml: float
+    percent: int
+    default_ml: int
 
 class AlcoholMasterResponse(AlcoholMasterBase):
     id: int
@@ -43,7 +44,7 @@ def save_alcohol_master(data: AlcoholMasterBase, db: Session = Depends(get_db)):
     db_item = db.query(AlcoholMaster).filter(AlcoholMaster.name == data.name).first()
     if db_item:
         db_item.percent = data.percent
-        db_item.ml = data.ml
+        db_item.default_ml = data.default_ml
     else:
         db_item = AlcoholMaster(**data.model_dump())
         db.add(db_item)
@@ -77,7 +78,7 @@ def save_intake(data: IntakeCreate, db: Session = Depends(get_db)):
     
     # 純アルコール量計算: ml * (percent/100) * 0.8
     total_pure = sum([
-        item.ml * (item.percent / 100) * 0.8 * item.count 
+        item.ml * (item.percent / 100) * 0.8
         for item in data.items
     ])
 
@@ -86,12 +87,12 @@ def save_intake(data: IntakeCreate, db: Session = Depends(get_db)):
 
     if db_item:
         db_item.items = items_json
-        db_item.total_pure_alcohol = total_pure
+        db_item.total_pure_alcohol = int(total_pure + 0.5)
     else:
         db_item = DailyIntake(
             date=data.date,
             items=items_json,
-            total_pure_alcohol=total_pure
+            total_pure_alcohol=int(total_pure + 0.5)
         )
         db.add(db_item)
     
