@@ -1,6 +1,7 @@
 import streamlit as st
 import requests
-from datetime import date
+from datetime import datetime, date
+from zoneinfo import ZoneInfo
 import calendar
 import os
 import json
@@ -28,7 +29,7 @@ if "daily_limit" not in st.session_state:
 if "selected_date" not in st.session_state:
     st.session_state.selected_date = None
 
-today = date.today()
+today = datetime.now(ZoneInfo("Asia/Tokyo")).date()
 year = st.sidebar.selectbox("年", range(today.year - 1, today.year + 2), index=1)
 month = st.sidebar.selectbox("月", range(1, 13), index=today.month - 1)
 
