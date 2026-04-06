@@ -224,6 +224,13 @@ st.sidebar.number_input(
     on_change=save_settings
 )
 
+with st.sidebar.expander("🔍 飲める量計算機"):
+    st.write("設定した目標値に達する量を計算します。")
+    calc_percent = st.number_input("アルコール度数 (%)", min_value=0.1, max_value=100.0, value=5.0, step=0.5, key="calc_pct")
+    limit_g = st.session_state.daily_limit
+    calc_ml = limit_g / (calc_percent / 100 * 0.8)
+    st.metric(f"目標 {limit_g}g までの目安", f"{int(calc_ml)} ml")
+
 st.sidebar.divider()
 def handle_master_registration():
     """マスタ登録ボタンのコールバック処理"""
