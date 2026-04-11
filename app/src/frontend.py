@@ -101,8 +101,19 @@ def calendar_button(day, alc, color, date_str, is_today=False):
 
 monthly_data = fetch_monthly_data(year, month)
 total_month_alc = sum(d["total_pure_alcohol"] for d in monthly_data.values())
-num_days = calendar.monthrange(year, month)[1]
-avg_month_alc = total_month_alc / num_days if num_days > 0 else 0
+
+if year < today.year or (year == today.year and month < today.month):
+    # 過去の月：月間合計をその月の日数で割る
+    num_days_to_count = calendar.monthrange(year, month)[1]
+    avg_month_alc = total_month_alc / num_days_to_count if num_days_to_count > 0 else 0
+elif year == today.year and month == today.month:
+    # 今月：前日までの純アルコール量合計を、経過日数（昨日まで）で割る
+    total_until_yesterday = sum(d["total_pure_alcohol"] for dt_str, d in monthly_data.items() if date.fromisoformat(dt_str).day < today.day)
+    num_days_to_count = today.day - 1
+    avg_month_alc = total_until_yesterday / num_days_to_count if num_days_to_count > 0 else 0
+else:
+    # 未来の月
+    avg_month_alc = 0
 
 # タイトルと今月の総純アルコール量を横並びに表示
 col_title, col_total, col_avg = st.columns([2, 1, 1])
