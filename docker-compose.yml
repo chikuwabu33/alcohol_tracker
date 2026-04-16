@@ -35,7 +35,9 @@ services:
       - "8502:8501"
     volumes:
       - ./app:/app
+      - ./settings:/settings
       - /app/__pycache__
+      - /app/src/__pycache__
     environment:
       - DEBUG=True
       - PYTHONUNBUFFERED=1
@@ -56,13 +58,16 @@ services:
       - POSTGRES_DB=alcohol_db
     ports:
       - "5433:5432"
+    volumes:
+      - ./pgdata:/var/lib/postgresql/data
     networks:
       - alcohol-network
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U user -d alcohol_db"]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 10
+      start_period: 60s
 
 networks:
   alcohol-network:

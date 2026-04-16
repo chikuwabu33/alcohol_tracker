@@ -7,11 +7,13 @@ import os
 import json
 
 BACKEND_URL = os.getenv("BACKEND_URL", "http://backend:8000")
-SETTINGS_FILE = "settings.json"
+SETTINGS_FILE = "/settings/settings.json"
 
 st.set_page_config(page_title="Alcohol Tracker", page_icon="🍺", layout="wide")
 
 def save_settings():
+    if not os.path.exists(os.path.dirname(SETTINGS_FILE)):
+        os.makedirs(os.path.dirname(SETTINGS_FILE))
     with open(SETTINGS_FILE, "w") as f:
         json.dump({"daily_limit": st.session_state.daily_limit}, f)
 
