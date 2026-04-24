@@ -1,3 +1,6 @@
+"""
+飲酒記録アプリのフロントエンド (Streamlit)
+"""
 import streamlit as st
 import requests
 from datetime import datetime, date
@@ -6,15 +9,18 @@ import calendar
 import os
 import json
 
+# APIサーバーのURLと設定ファイルパス
 BACKEND_URL = os.getenv("BACKEND_URL", "http://backend:8000")
 SETTINGS_FILE = "/settings/settings.json"
 
 st.set_page_config(page_title="Alcohol Tracker", page_icon="🍺", layout="wide")
 
 def save_settings():
+    """ユーザー設定（1日の目標量）をファイルに保存する"""
     if not os.path.exists(os.path.dirname(SETTINGS_FILE)):
         os.makedirs(os.path.dirname(SETTINGS_FILE))
     with open(SETTINGS_FILE, "w") as f:
+        # セッション状態から目標量を取得して保存
         json.dump({"daily_limit": st.session_state.daily_limit}, f)
 
 def load_settings():
@@ -26,16 +32,20 @@ def load_settings():
             pass
     return 20
 
+# アプリの状態を管理する変数の初期化
 if "daily_limit" not in st.session_state:
     st.session_state.daily_limit = load_settings()
 if "selected_date" not in st.session_state:
     st.session_state.selected_date = None
 
+# タイムゾーン考慮した今日の日付
 today = datetime.now(ZoneInfo("Asia/Tokyo")).date()
+# サイドバーでの年月選択
 year = st.sidebar.selectbox("年", range(today.year - 1, today.year + 2), index=1)
 month = st.sidebar.selectbox("月", range(1, 13), index=today.month - 1)
 
 def get_color_style(alc, limit):
+    """アルコール摂取量に応じてカレンダーのセルの色を決定する"""
     if alc == 0:
         return "white"
     if alc <= limit:
@@ -47,6 +57,7 @@ def get_color_style(alc, limit):
 
 @st.cache_data
 def fetch_monthly_data(y, m):
+    """バックエンドから1ヶ月分の飲酒データを取得してキャッシュする"""
     try:
         res = requests.get(f"{BACKEND_URL}/intakes", params={"year": y, "month": m})
         if res.status_code == 200:
@@ -57,6 +68,7 @@ def fetch_monthly_data(y, m):
 
 @st.cache_data
 def fetch_alcohol_masters():
+    """バックエンドからお酒のマスタデータを取得してキャッシュする"""
     try:
         res = requests.get(f"{BACKEND_URL}/alcohols")
         if res.status_code == 200:
@@ -66,6 +78,7 @@ def fetch_alcohol_masters():
     return []
 
 def save_alcohol_master(name, percent, default_ml):
+    """新しいお酒の種類を登録する"""
     try:
         res = requests.post(f"{BACKEND_URL}/alcohols", json={"name": name, "percent": percent, "default_ml": default_ml})
         return res.status_code == 200
@@ -73,6 +86,7 @@ def save_alcohol_master(name, percent, default_ml):
         return False
 
 def delete_alcohol_master(alc_id):
+    """お酒の種類を削除する"""
     try:
         res = requests.delete(f"{BACKEND_URL}/alcohols/{alc_id}")
         return res.status_code == 200
@@ -81,6 +95,10 @@ def delete_alcohol_master(alc_id):
 
 # ⭐ HTMLクリック用
 def calendar_button(day, alc, color, date_str, is_today=False):
+    """
+    カレンダーの1日分を表示するボタン(HTML形式)。
+    クリック時にクエリパラメータを使用して日付を選択状態にする。
+    """
     label = f"<b>{day}</b><br><small>{int(alc)}g</small>"
     border_style = "2px solid #FF0000" if is_today else "1px solid #aaa"
     return f"""
@@ -103,6 +121,7 @@ def calendar_button(day, alc, color, date_str, is_today=False):
 
 monthly_data = fetch_monthly_data(year, month)
 total_month_alc = sum(d["total_pure_alcohol"] for d in monthly_data.values())
+# 統計情報の計算 (今月の平均値算出ロジック)
 
 if year < today.year or (year == today.year and month < today.month):
     # 過去の月：月間合計をその月の日数で割る
@@ -128,14 +147,18 @@ with col_avg:
 
 st.info("**純アルコール量計算式:** 量(ml) × (度数/100) × 0.8")
 
+# 登録済みマスタの読み込みと辞書化
 alcohol_masters = fetch_alcohol_masters()
 master_options = {m["name"]: m for m in alcohol_masters}
 master_names = ["-- 選択してください --"] + list(master_options.keys())
 
+# カレンダーの描画
 st.header(f"{year}年{month}月のカレンダー")
+calendar.setfirstweekday(calendar.SUNDAY)
 cal = calendar.monthcalendar(year, month)
 
-days = ["月", "火", "水", "木", "金", "土", "日"]
+# 曜日見出し
+days = ["日", "月", "火", "水", "木", "金", "土"]
 cols = st.columns(7)
 for i, d in enumerate(days):
     cols[i].write(f"**{d}**")
@@ -147,6 +170,7 @@ if "selected" in params:
 else:
     st.session_state.selected_date = None
 
+# 週ごとの行ループ
 for week in cal:
     cols = st.columns(7)
     for i, day in enumerate(week):
@@ -167,12 +191,14 @@ for week in cal:
             cols[i].markdown(html, unsafe_allow_html=True)
 
 # ===== 以下は元コードほぼそのまま =====
+# 日付選択時の入力フォーム表示
 
 if st.session_state.selected_date:
     selected_date = st.session_state.selected_date
     st.divider()
     st.subheader(f"📝 {selected_date} の記録")
 
+    # 既に記録があれば初期値として読み込む
     existing_data = monthly_data.get(str(selected_date), {}).get("items", [])
 
     items = []
@@ -181,12 +207,14 @@ if st.session_state.selected_date:
 
         default_name = "-- 選択してください --"
 
+        # 既存データの反映ロジック
         if i < len(existing_data):
             for name, m in master_options.items():
                 if m["percent"] == existing_data[i]["percent"]:
                     default_name = name
                     break
 
+        # お酒の選択
         selected_name = c1.selectbox(
             f"お酒 {i+1}",
             master_names,
@@ -195,6 +223,7 @@ if st.session_state.selected_date:
         )
 
         input_ml = 0
+        # 選択されたお酒のデフォルト量を設定
         if selected_name != "-- 選択してください --":
             m = master_options[selected_name]
             # 保存データがあれば優先、なければマスタの登録量を初期値にする
@@ -211,6 +240,7 @@ if st.session_state.selected_date:
         try:
             res = requests.post(f"{BACKEND_URL}/intakes", json={"date": str(selected_date), "items": items})
             if res.status_code == 200:
+                # 成功したらキャッシュを消して再読み込み
                 fetch_monthly_data.clear() # キャッシュをクリア
                 st.session_state.selected_date = None
                 st.query_params.clear()
@@ -225,6 +255,7 @@ if st.session_state.selected_date:
         st.query_params.clear()
         st.rerun()
 
+# サイドバーの設定項目
 st.sidebar.divider()
 st.sidebar.header("🎯 目標設定")
 st.sidebar.info(""" 背景色がオレンジの日は目標の純アルコール量を上回った日です。 """)
@@ -237,6 +268,7 @@ st.sidebar.number_input(
     on_change=save_settings
 )
 
+# 飲める量の逆算シミュレーター
 with st.sidebar.expander("🔍 飲める量計算機"):
     st.write("設定した目標値に達する量を計算します。")
     calc_percent = st.number_input("アルコール度数 (%)", min_value=0.1, max_value=100.0, value=5.0, step=0.5, key="calc_pct")
@@ -264,6 +296,7 @@ def handle_master_registration():
     else:
         st.session_state.master_reg_error = "名前を入力してください"
 
+# お酒の種類を管理するセクション
 with st.sidebar.expander("📝 お酒のマスタ設定"):
     st.text_input("お酒の名前", key="master_name_input")
     st.number_input("度数 (%)", value=5, step=1, key="master_pct_input")
