@@ -178,4 +178,3 @@ def get_ai_advice(year: int, month: int, daily_limit: int, db: Session = Depends
 
         print(f"AI Advice Error: {e}")  # ログに出力
         raise HTTPException(status_code=500, detail=f"AI Error: {str(e)}")
-        
