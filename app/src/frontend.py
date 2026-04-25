@@ -7,6 +7,7 @@ from datetime import datetime, date
 from zoneinfo import ZoneInfo
 import calendar
 import os
+from io import StringIO
 import json
 
 # APIサーバーのURLと設定ファイルパス
@@ -144,6 +145,25 @@ with col_total:
     st.metric("今月の総純アルコール量", f"{int(total_month_alc)} g")
 with col_avg:
     st.metric("1日あたりの平均", f"{int(avg_month_alc)} g")
+
+# AI医師のアドバイスセクション
+with st.expander("🩺 AI医師によるマンスリー分析", expanded=False):
+    if st.button("アドバイスを生成する", use_container_width=True):
+        with st.spinner("AI医師がデータを分析しています..."):
+            try:
+                params = {
+                    "year": year,
+                    "month": month,
+                    "daily_limit": st.session_state.daily_limit
+                }
+                res = requests.get(f"{BACKEND_URL}/ai-advice", params=params)
+                if res.status_code == 200:
+                    st.markdown(res.json()["advice"])
+                else:
+                    error_detail = res.json().get("detail", "不明なエラー")
+                    st.error(f"アドバイスの取得に失敗しました: {error_detail}")
+            except Exception as e:
+                st.error(f"エラーが発生しました: {e}")
 
 st.info("**純アルコール量計算式:** 量(ml) × (度数/100) × 0.8")
 
@@ -318,3 +338,69 @@ with st.sidebar.expander("📝 お酒のマスタ設定"):
                     fetch_alcohol_masters.clear() # キャッシュをクリア
                     st.query_params.clear()
                     st.rerun()
+
+# ===== データ管理（バックアップ・復元）セクション =====
+st.sidebar.divider()
+st.sidebar.header("💾 データ管理")
+
+# バックアップ機能
+if st.sidebar.button("データベースをバックアップ", use_container_width=True):
+    try:
+        with st.spinner("バックアップデータを取得中..."):
+            response = requests.get(f"{BACKEND_URL}/backup")
+            if response.status_code == 200:
+                backup_data = response.json()
+                # JSONデータを整形して文字列化
+                json_string = json.dumps(backup_data, indent=2, ensure_ascii=False)
+                
+                # ダウンロードボタンを表示
+                st.sidebar.download_button(
+                    label="バックアップファイルをダウンロード",
+                    data=json_string,
+                    file_name=f"alcohol_tracker_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+                    mime="application/json",
+                    key="download_backup_button"
+                )
+                st.sidebar.success("バックアップデータが生成されました。ダウンロードボタンをクリックしてください。")
+            else:
+                st.sidebar.error(f"バックアップデータの取得に失敗しました: {response.status_code} - {response.text}")
+    except requests.exceptions.ConnectionError:
+        st.sidebar.error("バックエンドに接続できません。バックエンドサービスが実行されていることを確認してください。")
+    except Exception as e:
+        st.sidebar.error(f"バックアップ中にエラーが発生しました: {e}")
+
+st.sidebar.markdown("---") # 区切り線
+
+# 復元機能
+st.sidebar.subheader("データ復元")
+st.sidebar.warning("⚠️ **注意:** 復元を実行すると、**現在のデータベースのデータは全て上書きされます**。")
+
+uploaded_file = st.sidebar.file_uploader(
+    "バックアップファイルをアップロード",
+    type=["json"],
+    key="restore_file_uploader",
+    help="以前にダウンロードしたJSON形式のバックアップファイルを選択してください。"
+)
+
+if uploaded_file is not None:
+    # アップロードされたファイルを読み込む
+    stringio = StringIO(uploaded_file.getvalue().decode("utf-8"))
+    try:
+        backup_data_to_restore = json.load(stringio)
+        
+        if st.sidebar.button("アップロードしたデータで復元を実行", type="primary", use_container_width=True):
+            with st.spinner("データベースを復元中..."):
+                response = requests.post(f"{BACKEND_URL}/restore", json=backup_data_to_restore)
+                if response.status_code == 200:
+                    st.sidebar.success("データベースが正常に復元されました。画面を再読み込みします。")
+                    fetch_monthly_data.clear() # キャッシュをクリアして最新データを取得
+                    fetch_alcohol_masters.clear() # キャッシュをクリアして最新データを取得
+                    st.rerun() # 画面を再描画
+                else:
+                    st.sidebar.error(f"データベースの復元に失敗しました: {response.status_code} - {response.text}")
+    except json.JSONDecodeError:
+        st.sidebar.error("無効なJSONファイルです。正しいバックアップファイルを選択してください。")
+    except requests.exceptions.ConnectionError:
+        st.sidebar.error("バックエンドに接続できません。バックエンドサービスが実行されていることを確認してください。")
+    except Exception as e:
+        st.sidebar.error(f"復元中にエラーが発生しました: {e}")

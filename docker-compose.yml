@@ -5,7 +5,7 @@ services:
       dockerfile: backend.Dockerfile
     container_name: alcohol-backend
     ports:
-      - "8001:8000"
+      - "${BACKEND_PORT:-8001}:8000"
     volumes:
       - ./app:/app
       - /app/__pycache__
@@ -13,11 +13,12 @@ services:
       - DEBUG=True
       - PYTHONUNBUFFERED=1
       - DATABASE_URL=postgresql://user:password@db:5432/alcohol_db
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
     command: uvicorn src.backend:app --host 0.0.0.0 --port 8000 --reload
     networks:
       - alcohol-network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -32,7 +33,7 @@ services:
       dockerfile: frontend.Dockerfile
     container_name: alcohol-frontend
     ports:
-      - "8502:8501"
+      - "${FRONTEND_PORT:-8502}:8501"
     volumes:
       - ./app:/app
       - ./settings:/settings
@@ -57,17 +58,17 @@ services:
       - POSTGRES_PASSWORD=password
       - POSTGRES_DB=alcohol_db
     ports:
-      - "5433:5432"
+      - "${DB_PORT:-5433}:5432"
     volumes:
       - ./pgdata:/var/lib/postgresql/data
     networks:
       - alcohol-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U user -d alcohol_db"]
-      interval: 10s
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
       timeout: 5s
-      retries: 10
-      start_period: 60s
+      retries: 5
+      start_period: 30s
 
 networks:
   alcohol-network:
