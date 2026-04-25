@@ -6,8 +6,16 @@ from sqlalchemy.orm import sessionmaker
 # 環境変数からDB接続情報を取得。デフォルトはDocker内PostgreSQL
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://user:password@db:5432/alcohol_db")
 
+# RenderやSupabaseなどの環境で "postgres://" となっている場合に "postgresql://" に変換する
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+
 # SQLAlchemyエンジンの作成
-engine = create_engine(DATABASE_URL)
+# pool_pre_ping=True を追加して、接続が切れている場合に自動で再接続を試みるようにする
+engine = create_engine(
+    DATABASE_URL,
+    pool_pre_ping=True
+)
 # セッション作成用のクラス
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base() # モデル定義のベースクラス

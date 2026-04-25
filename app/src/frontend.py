@@ -12,14 +12,12 @@ import json
 
 # APIサーバーのURLと設定ファイルパス
 BACKEND_URL = os.getenv("BACKEND_URL", "http://backend:8000")
-SETTINGS_FILE = "/settings/settings.json"
+SETTINGS_FILE = "settings.json" # 実行ディレクトリに保存
 
 st.set_page_config(page_title="Alcohol Tracker", page_icon="🍺", layout="wide")
 
 def save_settings():
     """ユーザー設定（1日の目標量）をファイルに保存する"""
-    if not os.path.exists(os.path.dirname(SETTINGS_FILE)):
-        os.makedirs(os.path.dirname(SETTINGS_FILE))
     with open(SETTINGS_FILE, "w") as f:
         # セッション状態から目標量を取得して保存
         json.dump({"daily_limit": st.session_state.daily_limit}, f)
