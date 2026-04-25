@@ -1,16 +1,11 @@
 from fastapi import FastAPI, Depends, HTTPException
 from sqlalchemy.orm import Session
 import calendar
-import os
-from google import genai
 from typing import List
 from datetime import date
 from pydantic import BaseModel
 from .database import engine, get_db, Base
 from .models import DailyIntake, AlcoholMaster
-
-# Gemini APIの設定
-client = genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
 
 # スキーマ変更を反映させるため、一時的にテーブルを削除して再作成する
 #Base.metadata.drop_all(bind=engine) 
@@ -123,6 +118,7 @@ def save_intake(data: IntakeCreate, db: Session = Depends(get_db)):
 @app.get("/intake/{target_date}")
 def get_day_intake(target_date: date, db: Session = Depends(get_db)):
     """特定の日付の飲酒詳細データを取得する"""
+<<<<<<< HEAD
     return db.query(DailyIntake).filter(DailyIntake.date == target_date).first()
 
 @app.get("/ai-advice")
@@ -178,3 +174,6 @@ def get_ai_advice(year: int, month: int, daily_limit: int, db: Session = Depends
 
         print(f"AI Advice Error: {e}")  # ログに出力
         raise HTTPException(status_code=500, detail=f"AI Error: {str(e)}")
+=======
+    return db.query(DailyIntake).filter(DailyIntake.date == target_date).first()
+>>>>>>> parent of 42319bd (AI医師によるアドバイス機能を追加.)

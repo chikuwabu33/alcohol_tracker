@@ -145,25 +145,6 @@ with col_total:
 with col_avg:
     st.metric("1日あたりの平均", f"{int(avg_month_alc)} g")
 
-# AI医師のアドバイスセクション
-with st.expander("🩺 AI医師によるマンスリー分析", expanded=False):
-    if st.button("アドバイスを生成する", use_container_width=True):
-        with st.spinner("AI医師がデータを分析しています..."):
-            try:
-                params = {
-                    "year": year,
-                    "month": month,
-                    "daily_limit": st.session_state.daily_limit
-                }
-                res = requests.get(f"{BACKEND_URL}/ai-advice", params=params)
-                if res.status_code == 200:
-                    st.markdown(res.json()["advice"])
-                else:
-                    error_detail = res.json().get("detail", "不明なエラー")
-                    st.error(f"アドバイスの取得に失敗しました: {error_detail}")
-            except Exception as e:
-                st.error(f"エラーが発生しました: {e}")
-
 st.info("**純アルコール量計算式:** 量(ml) × (度数/100) × 0.8")
 
 # 登録済みマスタの読み込みと辞書化
