@@ -13,6 +13,7 @@ services:
       - DEBUG=True
       - PYTHONUNBUFFERED=1
       - DATABASE_URL=postgresql://user:password@db:5432/alcohol_db
+      - GOOGLE_API_KEY=AIzaSyAqCD1NXwHeLHO8kLgPkcUTRJ1VcHWYv2c
     command: uvicorn src.backend:app --host 0.0.0.0 --port 8000 --reload
     networks:
       - alcohol-network
