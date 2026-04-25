@@ -55,6 +55,11 @@ class BackupPayload(BaseModel):
     daily_intakes: List[IntakeCreate]
     alcohol_masters: List[AlcoholMasterBase]
 
+@app.get("/")
+def read_root():
+    """ルートパスへのアクセスに対するウェルカムメッセージ"""
+    return {"message": "Alcohol Tracker API is running", "docs": "/docs"}
+
 @app.get("/health")
 def health_check():
     """サーバーの稼働確認用エンドポイント"""
