@@ -5,7 +5,7 @@ services:
       dockerfile: backend.Dockerfile
     container_name: alcohol-backend
     ports:
-      - "8001:8000"
+      - "${BACKEND_PORT:-8001}:8000"
     volumes:
       - ./app:/app
       - /app/__pycache__
@@ -13,7 +13,7 @@ services:
       - DEBUG=True
       - PYTHONUNBUFFERED=1
       - DATABASE_URL=postgresql://user:password@db:5432/alcohol_db
-      - GOOGLE_API_KEY=AIzaSyAqCD1NXwHeLHO8kLgPkcUTRJ1VcHWYv2c
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
     command: uvicorn src.backend:app --host 0.0.0.0 --port 8000 --reload
     networks:
       - alcohol-network
@@ -33,7 +33,7 @@ services:
       dockerfile: frontend.Dockerfile
     container_name: alcohol-frontend
     ports:
-      - "8502:8501"
+      - "${FRONTEND_PORT:-8502}:8501"
     volumes:
       - ./app:/app
       - ./settings:/settings
@@ -58,7 +58,7 @@ services:
       - POSTGRES_PASSWORD=password
       - POSTGRES_DB=alcohol_db
     ports:
-      - "5433:5432"
+      - "${DB_PORT:-5433}:5432"
     volumes:
       - ./pgdata:/var/lib/postgresql/data
     networks:
