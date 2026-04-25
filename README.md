@@ -68,24 +68,6 @@ DB_PORT=5433
 
 4. ブラウザで `http://localhost:8502` にアクセスしてください。
 
-## 📂 ディレクトリ構造
-
-```text
-.
-├── backend/
-│   ├── main.py             # FastAPI エンドポイント
-│   ├── models.py           # SQLAlchemy モデル
-│   ├── database.py         # DB接続設定
-│   └── ai_advice.py        # Gemini API 連携ロジック
-├── frontend/
-│   ├── main.py             # Streamlit アプリケーション
-│   └── settings.json       # アプリ設定（自動生成）
-├── docker-compose.yml
-├── backend.Dockerfile
-├── frontend.Dockerfile
-└── requirements.txt
-```
-
 ## ライセンス / 利用規約
 
 - **商用利用不可**: 本ソフトウェアを営利目的で利用、配布、または改変して販売することを禁じます。
