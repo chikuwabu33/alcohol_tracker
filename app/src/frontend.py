@@ -48,11 +48,11 @@ def get_color_style(alc, limit):
     if alc == 0:
         return "white"
     if alc <= limit:
-        return "rgba(40, 167, 69, 0.3)"
+        return "rgba(144, 238, 144, 0.4)" # 目標以内の場合は薄い緑
     ratio = min((alc - limit) / limit, 1.0)
     r = 255
-    g = int(230 * (1 - ratio))
-    return f"rgba({r}, {g}, 0, 0.6)"
+    g = int(210 * (1 - ratio))
+    return f"rgba({r}, {g}, 50, 0.75)" # 超過量に応じて黄色から赤へ変化
 
 @st.cache_data
 def fetch_monthly_data(y, m):
@@ -258,7 +258,7 @@ if st.session_state.selected_date:
         try:
             res = requests.post(f"{BACKEND_URL}/intakes", json={"date": str(selected_date), "items": items})
             if res.status_code == 200:
-                # 成功したらキャッシュを消して再読み込み
+                st.toast("記録を保存しました！ 🍺")
                 fetch_monthly_data.clear() # キャッシュをクリア
                 st.session_state.selected_date = None
                 st.query_params.clear()

@@ -55,6 +55,24 @@ class BackupPayload(BaseModel):
     daily_intakes: List[IntakeCreate]
     alcohol_masters: List[AlcoholMasterBase]
 
+def calculate_pure_alcohol(items: List[AlcoholItem]) -> int:
+    """純アルコール量を計算し、四捨五入して整数で返す (g)"""
+    total_pure = sum([
+        item.ml * (item.percent / 100) * 0.8
+        for item in items
+    ])
+    return int(total_pure + 0.5)
+
+def prepare_items_list(items: List[AlcoholItem]) -> List[dict]:
+    """Pydanticモデルまたは辞書のリストをJSON保存用の辞書リストに変換する"""
+    items_list = []
+    for item in items:
+        if isinstance(item, dict):
+            items_list.append(item)
+        else:
+            items_list.append(item.model_dump())
+    return items_list
+
 @app.get("/")
 def read_root():
     """ルートパスへのアクセスに対するウェルカムメッセージ"""
@@ -113,25 +131,21 @@ def save_intake(data: IntakeCreate, db: Session = Depends(get_db)):
     if len(data.items) > 5:
         raise HTTPException(status_code=400, detail="Maximum 5 items allowed")
     
-    # 純アルコール量計算: ml * (percent/100) * 0.8
-    total_pure = sum([ 
-        item.ml * (item.percent / 100) * 0.8
-        for item in data.items
-    ])
+    total_pure_alcohol = calculate_pure_alcohol(data.items)
+    items_json = prepare_items_list(data.items)
 
     db_item = db.query(DailyIntake).filter(DailyIntake.date == data.date).first()
-    items_json = [item.model_dump() for item in data.items]
 
     if db_item:
         # 既存の記録がある場合は更新
         db_item.items = items_json
-        db_item.total_pure_alcohol = int(total_pure + 0.5)
+        db_item.total_pure_alcohol = total_pure_alcohol
     else:
         # 新規の記録を作成
         db_item = DailyIntake(
             date=data.date,
             items=items_json,
-            total_pure_alcohol=int(total_pure + 0.5)
+            total_pure_alcohol=total_pure_alcohol
         )
         db.add(db_item)
     
@@ -257,41 +271,14 @@ def restore_data(backup_data: BackupPayload, db: Session = Depends(get_db)):
                 existing = db.query(DailyIntake).filter(DailyIntake.date == intake_data.date).first()
                 if existing:
                     logger.warning(f"Intake for date '{intake_data.date}' already exists, updating...")
-                    # 純アルコール量を再計算（計算ロジックの変更に対応するため）
-                    total_pure = sum([
-                        item.ml * (item.percent / 100) * 0.8
-                        for item in intake_data.items
-                    ])
-
-                    # itemsの変換（辞書またはオブジェクトの両方に対応）
-                    items_list = []
-                    for item in intake_data.items:
-                        if isinstance(item, dict):
-                            items_list.append(item)
-                        else:
-                            items_list.append(item.model_dump())
-
-                    existing.items = items_list
-                    existing.total_pure_alcohol = int(total_pure + 0.5)
+                    existing.items = prepare_items_list(intake_data.items)
+                    existing.total_pure_alcohol = calculate_pure_alcohol(intake_data.items)
                 else:
-                    # 純アルコール量を再計算（計算ロジックの変更に対応するため）
-                    total_pure = sum([
-                        item.ml * (item.percent / 100) * 0.8
-                        for item in intake_data.items
-                    ])
-
-                    # itemsの変換（辞書またはオブジェクトの両方に対応）
-                    items_list = []
-                    for item in intake_data.items:
-                        if isinstance(item, dict):
-                            items_list.append(item)
-                        else:
-                            items_list.append(item.model_dump())
-
+                    items_list = prepare_items_list(intake_data.items)
                     new_intake = DailyIntake(
                         date=intake_data.date,
                         items=items_list,
-                        total_pure_alcohol=int(total_pure + 0.5)
+                        total_pure_alcohol=calculate_pure_alcohol(intake_data.items)
                     )
                     db.add(new_intake)
                     logger.debug(f"Added intake: {intake_data.date} with {len(items_list)} items")
@@ -364,7 +351,7 @@ def _get_ai_advice_from_api(prompt: str):
 
     try:
         response = client.models.generate_content(
-            model='gemini-3-flash-preview',
+            model='gemini-2.0-flash',  # 最新の安定モデルを指定
             contents=prompt
         )
         return response.text
