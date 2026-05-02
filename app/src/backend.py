@@ -12,7 +12,7 @@ from datetime import date
 from functools import lru_cache
 from pydantic import BaseModel
 from .database import engine, get_db, Base
-from .models import DailyIntake, AlcoholMaster
+from .models import DailyIntake, AlcoholMaster, SystemSetting
 
 # ロギング設定
 logging.basicConfig(level=logging.INFO)
@@ -50,10 +50,16 @@ class IntakeCreate(BaseModel):
     date: date               # 記録対象の日付
     items: List[AlcoholItem] # 飲んだお酒のリスト
 
+class SettingItem(BaseModel):
+    """設定項目のスキーマ"""
+    key: str
+    value: str
+
 class BackupPayload(BaseModel):
     """データベースのバックアップデータを保持するスキーマ"""
     daily_intakes: List[IntakeCreate]
     alcohol_masters: List[AlcoholMasterBase]
+    settings: List[SettingItem] = []
 
 def calculate_pure_alcohol(items: List[AlcoholItem]) -> int:
     """純アルコール量を計算し、四捨五入して整数で返す (g)"""
@@ -113,6 +119,26 @@ def delete_alcohol_master(alc_id: int, db: Session = Depends(get_db)):
         db.commit()
     return {"status": "deleted"}
 
+@app.get("/settings/{key}")
+def get_setting(key: str, db: Session = Depends(get_db)):
+    """キー指定で設定値を取得する"""
+    setting = db.query(SystemSetting).filter(SystemSetting.key == key).first()
+    if not setting:
+        raise HTTPException(status_code=404, detail="Setting not found")
+    return setting
+
+@app.post("/settings")
+def save_setting(data: SettingItem, db: Session = Depends(get_db)):
+    """設定値を保存または更新する"""
+    setting = db.query(SystemSetting).filter(SystemSetting.key == data.key).first()
+    if setting:
+        setting.value = data.value
+    else:
+        setting = SystemSetting(key=data.key, value=data.value)
+        db.add(setting)
+    db.commit()
+    return {"status": "ok"}
+
 @app.get("/intakes")
 def get_intakes(year: int, month: int, db: Session = Depends(get_db)):
     """指定された年月（1ヶ月分）の飲酒記録を取得する"""
@@ -163,6 +189,7 @@ def backup_data(db: Session = Depends(get_db)):
     """データベースの全データをJSON形式でバックアップする"""
     all_daily_intakes = db.query(DailyIntake).all()
     all_alcohol_masters = db.query(AlcoholMaster).all()
+    all_settings = db.query(SystemSetting).all()
 
     # DBオブジェクトをPydanticモデルに変換し、IDを含まない形式にする
     # これにより、復元時に新しいIDが自動生成される
@@ -183,10 +210,16 @@ def backup_data(db: Session = Depends(get_db)):
         AlcoholMasterBase(name=master.name, percent=master.percent, default_ml=master.default_ml).model_dump()
         for master in all_alcohol_masters
     ]
+    
+    settings_data = [
+        {"key": s.key, "value": s.value}
+        for s in all_settings
+    ]
 
     return {
         "daily_intakes": daily_intakes_data,
-        "alcohol_masters": alcohol_masters_data
+        "alcohol_masters": alcohol_masters_data,
+        "settings": settings_data
     }
 
 @app.post("/restore")
@@ -204,9 +237,8 @@ def restore_data(backup_data: BackupPayload, db: Session = Depends(get_db)):
         logger.info("Deleting existing data...")
         try:
             # より強力な削除方法を試す
-            # まずTRUNCATEを試す
-            db.execute(text("TRUNCATE TABLE daily_intakes RESTART IDENTITY CASCADE"))
-            db.execute(text("TRUNCATE TABLE alcohol_master RESTART IDENTITY CASCADE"))
+            # 全てのテーブルをTRUNCATE
+            db.execute(text("TRUNCATE TABLE daily_intakes, alcohol_master, system_settings RESTART IDENTITY CASCADE"))
             db.commit()
             logger.info("Existing data cleared successfully with TRUNCATE")
         except Exception as e:
@@ -225,6 +257,7 @@ def restore_data(backup_data: BackupPayload, db: Session = Depends(get_db)):
                 try:
                     db.query(DailyIntake).delete()
                     db.query(AlcoholMaster).delete()
+                    db.query(SystemSetting).delete()
                     db.commit()
                     logger.info("Existing data cleared successfully with query DELETE")
                 except Exception as e3:
@@ -285,6 +318,13 @@ def restore_data(backup_data: BackupPayload, db: Session = Depends(get_db)):
             except Exception as e:
                 logger.error(f"Error inserting alcohol intake for '{intake_data.date}': {str(e)}")
                 raise HTTPException(status_code=400, detail=f"Error inserting intake: {str(e)}")
+
+        # 設定値を挿入
+        if backup_data.settings:
+            logger.info(f"Inserting {len(backup_data.settings)} settings...")
+            for s in backup_data.settings:
+                new_setting = SystemSetting(key=s.key, value=s.value)
+                db.add(new_setting)
 
         db.commit()
         logger.info("Database restore completed successfully.")
