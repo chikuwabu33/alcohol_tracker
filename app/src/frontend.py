@@ -12,23 +12,27 @@ import json
 
 # APIサーバーのURLと設定ファイルパス
 BACKEND_URL = os.getenv("BACKEND_URL", "http://backend:8000")
-SETTINGS_FILE = "settings.json" # 実行ディレクトリに保存
 
 st.set_page_config(page_title="Alcohol Tracker", page_icon="🍺", layout="wide")
 
 def save_settings():
-    """ユーザー設定（1日の目標量）をファイルに保存する"""
-    with open(SETTINGS_FILE, "w") as f:
-        # セッション状態から目標量を取得して保存
-        json.dump({"daily_limit": st.session_state.daily_limit}, f)
+    """ユーザー設定（1日の目標量）をバックエンドに保存する"""
+    try:
+        requests.post(
+            f"{BACKEND_URL}/settings", 
+            json={"key": "daily_limit", "value": str(st.session_state.daily_limit)}
+        )
+    except:
+        pass
 
 def load_settings():
-    if os.path.exists(SETTINGS_FILE):
-        try:
-            with open(SETTINGS_FILE, "r") as f:
-                return json.load(f).get("daily_limit", 20)
-        except:
-            pass
+    """バックエンドから設定値を読み込む"""
+    try:
+        res = requests.get(f"{BACKEND_URL}/settings/daily_limit", timeout=2)
+        if res.status_code == 200:
+            return int(res.json()["value"])
+    except:
+        pass
     return 20
 
 # アプリの状態を管理する変数の初期化
@@ -48,11 +52,11 @@ def get_color_style(alc, limit):
     if alc == 0:
         return "white"
     if alc <= limit:
-        return "rgba(40, 167, 69, 0.3)"
+        return "rgba(144, 238, 144, 0.4)" # 目標以内の場合は薄い緑
     ratio = min((alc - limit) / limit, 1.0)
     r = 255
-    g = int(230 * (1 - ratio))
-    return f"rgba({r}, {g}, 0, 0.6)"
+    g = int(210 * (1 - ratio))
+    return f"rgba({r}, {g}, 50, 0.75)" # 超過量に応じて黄色から赤へ変化
 
 @st.cache_data
 def fetch_monthly_data(y, m):
@@ -258,7 +262,7 @@ if st.session_state.selected_date:
         try:
             res = requests.post(f"{BACKEND_URL}/intakes", json={"date": str(selected_date), "items": items})
             if res.status_code == 200:
-                # 成功したらキャッシュを消して再読み込み
+                st.toast("記録を保存しました！ 🍺")
                 fetch_monthly_data.clear() # キャッシュをクリア
                 st.session_state.selected_date = None
                 st.query_params.clear()

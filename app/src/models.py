@@ -18,3 +18,10 @@ class AlcoholMaster(Base):
     name = Column(String, unique=True, index=True, nullable=False) # お酒の名前
     percent = Column(Integer, nullable=False) # 度数 (%)
     default_ml = Column(Integer, nullable=False) # デフォルトの量 (ml)
+
+class SystemSetting(Base):
+    """アプリの設定を保存するテーブル"""
+    __tablename__ = "system_settings"
+
+    key = Column(String, primary_key=True, index=True) # 設定項目名
+    value = Column(String, nullable=False) # 設定値
