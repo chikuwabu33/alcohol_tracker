@@ -381,7 +381,7 @@ def generate_fallback_advice(year: int, month: int, daily_limit: int, results: l
 
 
 @lru_cache(maxsize=64)
-def _get_ai_advice_from_api(prompt: str):
+def _get_ai_advice_from_api(prompt: str, model_name: str = "gemini-flash-latest"):
     """
     AI APIを実際に呼び出す内部関数。
     lru_cacheにより、全く同じプロンプト（データ内容）ならAPIを呼ばずに結果を返す。
@@ -391,11 +391,12 @@ def _get_ai_advice_from_api(prompt: str):
 
     try:
         response = client.models.generate_content(
-            model='gemini-2.0-flash',  # 最新の安定モデルを指定
+            model=model_name,
             contents=prompt
         )
         return response.text
     except Exception as e:
+        # キャッシュされないように例外を再送出
         raise e
 
 
@@ -441,7 +442,18 @@ def get_ai_advice(year: int, month: int, daily_limit: int, db: Session = Depends
     """.strip()
 
     try:
-        ai_text = _get_ai_advice_from_api(prompt)
+        # まずは最新の 2.0-flash を試す
+        try:
+            ai_text = _get_ai_advice_from_api(prompt, model_name="gemini-2.0-flash")
+        except Exception as e:
+            # 429 (クォータ制限) や 404 (モデル未対応) の場合、利用可能な最新の Flash モデルを試す
+            err_msg = str(e)
+            if "429" in err_msg or "404" in err_msg or "RESOURCE_EXHAUSTED" in err_msg:
+                logger.info(f"Gemini 2.0-flash failed, falling back to gemini-flash-latest: {err_msg[:50]}...")
+                ai_text = _get_ai_advice_from_api(prompt, model_name="gemini-flash-latest")
+            else:
+                raise e
+
         if ai_text:
             return {"advice": ai_text}
         else:
@@ -476,7 +488,7 @@ def get_ai_advice(year: int, month: int, daily_limit: int, db: Session = Depends
             msg = (
                 ":red[【原因: モデルが見つかりません (404)】]\n\n"
                 f"指定されたモデル名が認識されませんでした。APIキーが Google AI Studio のものか確認してください。\n\n"
-                f"**解決策:** `gemini-1.5-flash-latest` や `gemini-1.5-pro` への変更を試してください。また、ライブラリ更新 (`pip install -U google-genai`) も有効です。"
+                f"**解決策:** `gemini-flash-latest` や `gemini-2.0-flash-lite` への変更を試してください。また、ライブラリ更新 (`pip install -U google-genai`) も有効です。"
             )
         else:
             msg = (

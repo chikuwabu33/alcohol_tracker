@@ -38,14 +38,39 @@ def load_settings():
 # アプリの状態を管理する変数の初期化
 if "daily_limit" not in st.session_state:
     st.session_state.daily_limit = load_settings()
-if "selected_date" not in st.session_state:
-    st.session_state.selected_date = None
 
 # タイムゾーン考慮した今日の日付
 today = datetime.now(ZoneInfo("Asia/Tokyo")).date()
+
+# 表示中の年月をセッション状態で保持（初期値は今日）
+if "view_year" not in st.session_state:
+    st.session_state.view_year = today.year
+if "view_month" not in st.session_state:
+    st.session_state.view_month = today.month
+
+# ⭐ URLパラメータでクリック検知 (サイドバーのインデックス決定に使うため、定義を前へ移動)
+params = st.query_params
+if "selected" in params:
+    try:
+        sel_date = date.fromisoformat(params["selected"])
+        st.session_state.selected_date = sel_date
+        # 選択された日付がある場合、その年月にカレンダーの表示を合わせる
+        st.session_state.view_year = sel_date.year
+        st.session_state.view_month = sel_date.month
+    except:
+        st.session_state.selected_date = None
+else:
+    st.session_state.selected_date = None
+
 # サイドバーでの年月選択
-year = st.sidebar.selectbox("年", range(today.year - 1, today.year + 2), index=1)
-month = st.sidebar.selectbox("月", range(1, 13), index=today.month - 1)
+year_options = list(range(today.year - 1, today.year + 2))
+year_idx = year_options.index(st.session_state.view_year) if st.session_state.view_year in year_options else 1
+year = st.sidebar.selectbox("年", year_options, index=year_idx)
+month = st.sidebar.selectbox("月", range(1, 13), index=st.session_state.view_month - 1)
+
+# 現在の表示年月をセッション状態に保存
+st.session_state.view_year = year
+st.session_state.view_month = month
 
 def get_color_style(alc, limit):
     """アルコール摂取量に応じてカレンダーのセルの色を決定する"""
@@ -185,13 +210,6 @@ cols = st.columns(7)
 for i, d in enumerate(days):
     cols[i].write(f"**{d}**")
 
-# ⭐ URLパラメータでクリック検知
-params = st.query_params
-if "selected" in params:
-    st.session_state.selected_date = date.fromisoformat(params["selected"])
-else:
-    st.session_state.selected_date = None
-
 # 週ごとの行ループ
 for week in cal:
     cols = st.columns(7)
@@ -220,8 +238,16 @@ if st.session_state.selected_date:
     st.divider()
     st.subheader(f"📝 {selected_date} の記録")
 
-    # 既に記録があれば初期値として読み込む
-    existing_data = monthly_data.get(str(selected_date), {}).get("items", [])
+    # 既に記録があればバックエンドから直接最新の1日分を取得する（月間キャッシュの不整合を防ぐ）
+    existing_data = []
+    try:
+        res = requests.get(f"{BACKEND_URL}/intake/{selected_date}", timeout=2)
+        if res.status_code == 200:
+            day_data = res.json()
+            if day_data and "items" in day_data:
+                existing_data = day_data["items"]
+    except:
+        pass
 
     items = []
     for i in range(5):
@@ -231,8 +257,9 @@ if st.session_state.selected_date:
 
         # 既存データの反映ロジック
         if i < len(existing_data):
+            target_item = existing_data[i]
             for name, m in master_options.items():
-                if m["percent"] == existing_data[i]["percent"]:
+                if int(m["percent"]) == int(target_item["percent"]):
                     default_name = name
                     break
 
