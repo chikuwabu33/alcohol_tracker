@@ -8,7 +8,7 @@ import logging
 import hashlib
 from google import genai
 from typing import List
-from datetime import date
+from datetime import date, datetime, timedelta
 from functools import lru_cache
 from pydantic import BaseModel
 from .database import engine, get_db, Base
@@ -336,19 +336,19 @@ def restore_data(backup_data: BackupPayload, db: Session = Depends(get_db)):
         logger.error(f"Unexpected error during database restore: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to restore database: {str(e)}")
 
-def generate_fallback_advice(year: int, month: int, daily_limit: int, results: list) -> str:
+def generate_fallback_advice(year: int, month: int, daily_limit: int, results: list, analysis_days: int) -> str:
     """AIが利用できない場合に、内部的なルールベースで代替アドバイスを生成する"""
-    month_days = calendar.monthrange(year, month)[1]
     total_alc = sum(r.total_pure_alcohol for r in results)
-    avg_alc = total_alc / month_days
-    drink_days = len(results)
-    no_drink_days = sum(1 for r in results if r.total_pure_alcohol == 0)
+    avg_alc = total_alc / analysis_days if analysis_days > 0 else 0
+    # 記録がある日のうち、純アルコールが0より大きい日を飲酒日とする。それ以外（記録なし含む）を休肝日とする。
+    drink_days_with_alcohol = sum(1 for r in results if r.total_pure_alcohol > 0)
+    no_drink_days = analysis_days - drink_days_with_alcohol
     above_limit_days = sum(1 for r in results if r.total_pure_alcohol > daily_limit)
     high_risk_days = sum(1 for r in results if r.total_pure_alcohol >= daily_limit * 1.5)
 
     advice_lines = [
-        f"対象年月: {year}年{month}月の飲酒傾向をまとめます。",
-        f"この期間の総純アルコール量は {total_alc}g、1日あたりの平均は {avg_alc:.1f}g です。",
+        f"対象期間の飲酒傾向（計{analysis_days}日間）をまとめます。",
+        f"総純アルコール量は {total_alc}g、1日あたりの平均は {avg_alc:.1f}g です。",
         f"{no_drink_days}日間は休肝日がありました。",
         f"目標量を上回った日は {above_limit_days}日、特に高リスクだった日は {high_risk_days}日です。",
         "",
@@ -356,7 +356,7 @@ def generate_fallback_advice(year: int, month: int, daily_limit: int, results: l
 
     if no_drink_days == 0:
         advice_lines.append(":red[休肝日が1日もないため、1週間に1〜2日の休肝日を設けることを強くおすすめします。]")
-    elif no_drink_days < max(1, month_days // 10):
+    elif no_drink_days < max(1, analysis_days // 10):
         advice_lines.append("休肝日はありますが、もう少し増やすと体と肝臓の回復につながります。")
     else:
         advice_lines.append("休肝日が一定数あるのは良い傾向です。継続してください。")
@@ -403,9 +403,27 @@ def _get_ai_advice_from_api(prompt: str, model_name: str = "gemini-flash-latest"
 @app.get("/ai-advice")
 def get_ai_advice(year: int, month: int, daily_limit: int, db: Session = Depends(get_db)):
     """生成AIを使用して、1ヶ月の飲酒データに基づく医師のアドバイスを取得する"""
+    # 現在の日付を取得
+    today = datetime.now().date()
     start_date = date(year, month, 1)
     last_day = calendar.monthrange(year, month)[1]
-    end_date = date(year, month, last_day)
+
+    # 診断対象の終了日と分析日数を決定
+    if year == today.year and month == today.month:
+        # 今月の場合は昨日までを対象とする
+        end_date = today - timedelta(days=1)
+        analysis_days = today.day - 1
+        period_text = f"{year}年{month}月1日から{end_date.day}日まで (昨日までのデータ)"
+    elif start_date > today:
+        return {"advice": "未来の月のデータは診断できません。"}
+    else:
+        # 過去の月の場合は月全体を対象とする
+        end_date = date(year, month, last_day)
+        analysis_days = last_day
+        period_text = f"{year}年{month}月全体"
+
+    if analysis_days <= 0:
+        return {"advice": f"{year}年{month}月の分析対象データ（昨日の分まで）がまだありません。"}
     
     results = db.query(DailyIntake).filter(
         DailyIntake.date >= start_date,
@@ -413,22 +431,22 @@ def get_ai_advice(year: int, month: int, daily_limit: int, db: Session = Depends
     ).order_by(DailyIntake.date).all()
 
     if not results:
-        return {"advice": "この月のデータが登録されていないため、アドバイスを生成できません。"}
+        return {"advice": f"{period_text}の記録が1件も登録されていないため、アドバイスを生成できません。"}
 
     # データのサマリー作成
     data_summary = "\n".join([f"- {r.date}: {r.total_pure_alcohol}g" for r in results])
     total_alc = sum(r.total_pure_alcohol for r in results)
-    avg_alc = total_alc / last_day
+    avg_alc = total_alc / analysis_days
 
     prompt = f"""
     あなたは親しみやすく、かつ専門的な知見を持つ医師です。
-    以下の1ヶ月間の飲酒データに基づき、患者へのアドバイスを日本語で提供してください。
+    以下の期間の飲酒データに基づき、患者へのアドバイスを日本語で提供してください。
 
     【基本情報】
-    - 対象年月: {year}年{month}月
+    - 分析対象期間: {period_text}
     - 1日の目標摂取量: {daily_limit}g
-    - 1ヶ月の総純アルコール量: {total_alc}g
-    - 1日あたりの平均摂取量: {avg_alc:.1f}g
+    - 対象期間の総純アルコール量: {total_alc}g
+    - 1日あたりの平均摂取量: {avg_alc:.1f}g (対象日数: {analysis_days}日)
 
     【日別の摂取データ (日付: 純アルコール量g)】
     {data_summary if data_summary else "データなし"}
@@ -457,7 +475,7 @@ def get_ai_advice(year: int, month: int, daily_limit: int, db: Session = Depends
         if ai_text:
             return {"advice": ai_text}
         else:
-            return {"advice": generate_fallback_advice(year, month, daily_limit, results)}
+            return {"advice": generate_fallback_advice(year, month, daily_limit, results, analysis_days)}
     except Exception as e:
         error_str = str(e)
         logger.error(f"AI Advice Error: {error_str}")
@@ -497,4 +515,4 @@ def get_ai_advice(year: int, month: int, daily_limit: int, db: Session = Depends
                 "**解決策:** しばらく時間を置いてから再度お試しください。"
             )
         
-        return {"advice": msg + "\n\n---\n### 代替の節酒アドバイス\n\n" + generate_fallback_advice(year, month, daily_limit, results)}
+        return {"advice": msg + "\n\n---\n### 代替の節酒アドバイス\n\n" + generate_fallback_advice(year, month, daily_limit, results, analysis_days)}
