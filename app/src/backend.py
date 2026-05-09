@@ -119,7 +119,7 @@ def delete_alcohol_master(alc_id: int, db: Session = Depends(get_db)):
         db.commit()
     return {"status": "deleted"}
 
-@app.get("/settings/{key}")
+@app.get("/settings/{key}", response_model=SettingItem)
 def get_setting(key: str, db: Session = Depends(get_db)):
     """キー指定で設定値を取得する"""
     setting = db.query(SystemSetting).filter(SystemSetting.key == key).first()
@@ -127,7 +127,7 @@ def get_setting(key: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Setting not found")
     return setting
 
-@app.post("/settings")
+@app.post("/settings", response_model=SettingItem)
 def save_setting(data: SettingItem, db: Session = Depends(get_db)):
     """設定値を保存または更新する"""
     setting = db.query(SystemSetting).filter(SystemSetting.key == data.key).first()
@@ -137,7 +137,8 @@ def save_setting(data: SettingItem, db: Session = Depends(get_db)):
         setting = SystemSetting(key=data.key, value=data.value)
         db.add(setting)
     db.commit()
-    return {"status": "ok"}
+    db.refresh(setting)
+    return setting
 
 @app.get("/intakes")
 def get_intakes(year: int, month: int, db: Session = Depends(get_db)):
