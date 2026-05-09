@@ -18,9 +18,10 @@ st.set_page_config(page_title="Alcohol Tracker", page_icon="🍺", layout="wide"
 def save_settings():
     """ユーザー設定（1日の目標量）をバックエンドに保存する"""
     try:
+        limit = int(st.session_state.daily_limit)
         requests.post(
             f"{BACKEND_URL}/settings", 
-            json={"key": "daily_limit", "value": str(st.session_state.daily_limit)}
+            json={"key": "daily_limit", "value": str(limit)}
         )
     except:
         pass
@@ -30,7 +31,7 @@ def load_settings():
     try:
         res = requests.get(f"{BACKEND_URL}/settings/daily_limit", timeout=2)
         if res.status_code == 200:
-            return int(res.json()["value"])
+            return int(float(res.json()["value"]))
     except:
         pass
     return 20
