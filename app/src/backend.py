@@ -23,10 +23,14 @@ client = genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
 
 # スキーマ変更を反映させるため、一時的にテーブルを削除して再作成する
 #Base.metadata.drop_all(bind=engine) 
-Base.metadata.create_all(bind=engine)
 
 # FastAPIアプリケーションのインスタンス化
 app = FastAPI()
+
+@app.on_event("startup")
+def startup_event():
+    """アプリ起動時にデータベーステーブルを作成する"""
+    Base.metadata.create_all(bind=engine)
 
 class AlcoholItem(BaseModel):
     """1回に飲んだお酒の情報を保持するスキーマ"""

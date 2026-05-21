@@ -18,13 +18,18 @@ st.set_page_config(page_title="Alcohol Tracker", page_icon="🍺", layout="wide"
 def save_settings():
     """ユーザー設定（1日の目標量）をバックエンドに保存する"""
     try:
-        limit = int(st.session_state.daily_limit)
-        requests.post(
+        limit = int(float(st.session_state.daily_limit))
+        res = requests.post(
             f"{BACKEND_URL}/settings", 
-            json={"key": "daily_limit", "value": str(limit)}
+            json={"key": "daily_limit", "value": str(limit)},
+            timeout=5
         )
-    except:
-        pass
+        if res.status_code != 200:
+            st.error(f"設定の保存に失敗しました: {res.text}")
+        else:
+            st.toast(f"目標値を {limit}g に更新しました 🎯")
+    except Exception as e:
+        st.error(f"バックエンドとの通信に失敗しました: {e}")
 
 def load_settings():
     """バックエンドから設定値を読み込む"""
@@ -32,13 +37,19 @@ def load_settings():
         res = requests.get(f"{BACKEND_URL}/settings/daily_limit", timeout=2)
         if res.status_code == 200:
             return int(float(res.json()["value"]))
-    except:
+    except Exception:
         pass
-    return 20
+    return None # 取得失敗時は None を返す
 
 # アプリの状態を管理する変数の初期化
-if "daily_limit" not in st.session_state:
-    st.session_state.daily_limit = load_settings()
+if "daily_limit" not in st.session_state or st.session_state.get("_initial_load_failed", False):
+    saved_limit = load_settings()
+    if saved_limit is not None:
+        st.session_state.daily_limit = saved_limit
+        st.session_state._initial_load_failed = False
+    else:
+        st.session_state.daily_limit = 20 # デフォルト値
+        st.session_state._initial_load_failed = True # 次回実行時に再試行するためのフラグ
 
 # タイムゾーン考慮した今日の日付
 today = datetime.now(ZoneInfo("Asia/Tokyo")).date()
