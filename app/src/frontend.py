@@ -32,24 +32,30 @@ def save_settings():
         st.error(f"バックエンドとの通信に失敗しました: {e}")
 
 def load_settings():
-    """バックエンドから設定値を読み込む"""
+    """バックエンドから設定値を読み込む。 (値, 成功フラグ) のタプルを返す"""
     try:
-        res = requests.get(f"{BACKEND_URL}/settings/daily_limit", timeout=2)
+        res = requests.get(f"{BACKEND_URL}/settings/daily_limit", timeout=5)
         if res.status_code == 200:
-            return int(float(res.json()["value"]))
-    except Exception:
+            return int(float(res.json()["value"])), True
+        if res.status_code == 404:
+            return None, True  # 設定が未登録なだけで、通信自体は成功
+    except Exception as e:
+        print(f"Settings load error: {e}")
         pass
-    return None # 取得失敗時は None を返す
+    return None, False  # 通信失敗など
 
 # アプリの状態を管理する変数の初期化
 if "daily_limit" not in st.session_state or st.session_state.get("_initial_load_failed", False):
-    saved_limit = load_settings()
-    if saved_limit is not None:
-        st.session_state.daily_limit = saved_limit
+    val, success = load_settings()
+    if success:
+        # 取得に成功した場合（値がある場合はその値、ない場合はデフォルト20）
+        st.session_state.daily_limit = val if val is not None else 20
         st.session_state._initial_load_failed = False
     else:
-        st.session_state.daily_limit = 20 # デフォルト値
-        st.session_state._initial_load_failed = True # 次回実行時に再試行するためのフラグ
+        # 通信失敗などの場合、暫定的に20を設定し、次回再試行する
+        if "daily_limit" not in st.session_state:
+            st.session_state.daily_limit = 20
+        st.session_state._initial_load_failed = True
 
 # タイムゾーン考慮した今日の日付
 today = datetime.now(ZoneInfo("Asia/Tokyo")).date()
