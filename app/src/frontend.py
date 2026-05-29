@@ -331,9 +331,10 @@ st.sidebar.number_input(
     "1日の純アルコール限度 (g)",
     min_value=1,
     step=1,
-    key="daily_limit",
-    on_change=save_settings
+    key="daily_limit"
 )
+if st.sidebar.button("目標を保存", use_container_width=True):
+    save_settings()
 
 # 飲める量の逆算シミュレーター
 with st.sidebar.expander("🔍 飲める量計算機"):
