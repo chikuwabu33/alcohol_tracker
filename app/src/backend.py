@@ -7,10 +7,10 @@ import json
 import logging
 import hashlib
 from google import genai
-from typing import List
+from typing import List, Optional
 from datetime import date, datetime, timedelta
 from functools import lru_cache
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from .database import engine, get_db, Base
 from .models import DailyIntake, AlcoholMaster, SystemSetting
 
@@ -46,18 +46,27 @@ class AlcoholMasterBase(BaseModel):
 class AlcoholMasterResponse(AlcoholMasterBase):
     """APIレスポンス用のお酒マスタスキーマ"""
     id: int  # データベース上のID
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
+
+class DailyIntakeResponse(BaseModel):
+    """飲酒記録のレスポンススキーマ"""
+    id: int
+    date: date
+    items: List[AlcoholItem]
+    total_pure_alcohol: int
+    model_config = ConfigDict(from_attributes=True)
 
 class IntakeCreate(BaseModel):
     """飲酒記録作成時のリクエストスキーマ"""
     date: date               # 記録対象の日付
     items: List[AlcoholItem] # 飲んだお酒のリスト
+    model_config = ConfigDict(from_attributes=True)
 
 class SettingItem(BaseModel):
     """設定項目のスキーマ"""
     key: str
     value: str
+    model_config = ConfigDict(from_attributes=True)
 
 class BackupPayload(BaseModel):
     """データベースのバックアップデータを保持するスキーマ"""
@@ -144,7 +153,7 @@ def save_setting(data: SettingItem, db: Session = Depends(get_db)):
     db.refresh(setting)
     return setting
 
-@app.get("/intakes")
+@app.get("/intakes", response_model=List[DailyIntakeResponse])
 def get_intakes(year: int, month: int, db: Session = Depends(get_db)):
     """指定された年月（1ヶ月分）の飲酒記録を取得する"""
     start_date = date(year, month, 1)
@@ -156,7 +165,7 @@ def get_intakes(year: int, month: int, db: Session = Depends(get_db)):
     ).all()
     return results
 
-@app.post("/intakes")
+@app.post("/intakes", response_model=DailyIntakeResponse)
 def save_intake(data: IntakeCreate, db: Session = Depends(get_db)):
     """特定の日付の飲酒記録を保存する"""
     if len(data.items) > 5:
@@ -184,7 +193,7 @@ def save_intake(data: IntakeCreate, db: Session = Depends(get_db)):
     db.refresh(db_item)
     return db_item
 
-@app.get("/intake/{target_date}")
+@app.get("/intake/{target_date}", response_model=Optional[DailyIntakeResponse])
 def get_day_intake(target_date: date, db: Session = Depends(get_db)):
     """特定の日付の飲酒詳細データを取得する"""
     return db.query(DailyIntake).filter(DailyIntake.date == target_date).first()
