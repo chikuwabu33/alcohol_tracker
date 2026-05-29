@@ -116,7 +116,7 @@ def fetch_monthly_data(y, m):
 def fetch_alcohol_masters():
     """バックエンドからお酒のマスタデータを取得してキャッシュする"""
     try:
-        res = requests.get(f"{BACKEND_URL}/alcohols")
+        res = requests.get(f"{BACKEND_URL}/alcohols", timeout=5)
         if res.status_code == 200:
             return res.json()
     except:
