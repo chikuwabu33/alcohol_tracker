@@ -14,3 +14,6 @@ Thumbs.db
 pgdata/
 settings/settings.json
 .env
+
+# Data Backups
+alcohol_tracker_backup_*.json
