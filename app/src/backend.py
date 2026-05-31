@@ -143,15 +143,23 @@ def get_setting(key: str, db: Session = Depends(get_db)):
 @app.post("/settings", response_model=SettingItem)
 def save_setting(data: SettingItem, db: Session = Depends(get_db)):
     """設定値を保存または更新する"""
-    setting = db.query(SystemSetting).filter(SystemSetting.key == data.key).first()
-    if setting:
-        setting.value = data.value
-    else:
-        setting = SystemSetting(key=data.key, value=data.value)
-        db.add(setting)
-    db.commit()
-    db.refresh(setting)
-    return setting
+    try:
+        setting = db.query(SystemSetting).filter(SystemSetting.key == data.key).first()
+        if setting:
+            logger.info(f"Updating existing setting: {data.key} = {data.value}")
+            setting.value = data.value
+        else:
+            logger.info(f"Creating new setting: {data.key} = {data.value}")
+            setting = SystemSetting(key=data.key, value=data.value)
+            db.add(setting)
+        
+        db.commit()
+        db.refresh(setting)
+        return setting
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Failed to save setting {data.key}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
 @app.get("/intakes", response_model=List[DailyIntakeResponse])
 def get_intakes(year: int, month: int, db: Session = Depends(get_db)):
