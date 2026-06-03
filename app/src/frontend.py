@@ -45,17 +45,10 @@ def load_settings():
     return None, False  # 通信失敗など
 
 # アプリの状態を管理する変数の初期化
-if "daily_limit" not in st.session_state or st.session_state.get("_initial_load_failed", False):
+if "daily_limit" not in st.session_state:
     val, success = load_settings()
-    if success:
-        # 取得に成功した場合（値がある場合はその値、ない場合はデフォルト20）
-        st.session_state.daily_limit = val if val is not None else 20
-        st.session_state._initial_load_failed = False
-    else:
-        # 通信失敗などの場合、暫定的に20を設定し、次回再試行する
-        if "daily_limit" not in st.session_state:
-            st.session_state.daily_limit = 20
-        st.session_state._initial_load_failed = True
+    # 取得に成功し、かつ値が存在する場合はその値を使用。それ以外は20を初期値として設定。
+    st.session_state.daily_limit = val if (success and val is not None) else 20
 
 # タイムゾーン考慮した今日の日付
 today = datetime.now(ZoneInfo("Asia/Tokyo")).date()
