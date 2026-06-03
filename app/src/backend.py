@@ -530,6 +530,12 @@ def get_ai_advice(year: int, month: int, daily_limit: int, db: Session = Depends
                 f"指定されたモデル名が認識されませんでした。APIキーが Google AI Studio のものか確認してください。\n\n"
                 f"**解決策:** `gemini-flash-latest` や `gemini-2.0-flash-lite` への変更を試してください。また、ライブラリ更新 (`pip install -U google-genai`) も有効です。"
             )
+        elif "400" in error_str and "location" in error_str.lower():
+            msg = (
+                ":red[【原因: サポート対象外の地域 (400)】]\n\n"
+                "現在お使いの環境（サーバーの設置場所）が、Google Gemini API のサポート対象地域外です。一部の国や地域（EU圏など）では、APIの利用が制限されている場合があります。\n\n"
+                "**解決策:** Renderの管理画面の「Settings」内にある「Region」を、米国（OregonやOhio）などに変更して再度デプロイしてください。※既存サービスのリージョン変更ができない場合は、新規サービスとして米国リージョンで作成し直す必要があります。"
+            )
         else:
             msg = (
                 f":red[【原因: 通信またはシステムエラー】]\n\n"
