@@ -481,23 +481,35 @@ def get_ai_advice(year: int, month: int, daily_limit: int, db: Session = Depends
     【重要】特に注意が必要な箇所や改善すべき重要なポイントは、Streamlitのカラー表記である `:red[重要表現]` という形式を使用して、赤文字で強調してください。
     """.strip()
 
-    try:
-        # まずは最新の 2.0-flash を試す
+    # AI APIの呼び出しを試みる（複数モデルのフォールバック付き）
+    ai_text = None
+    last_error = None
+    
+    # 試行するモデルのリスト
+    models_to_try = ["gemini-2.0-flash", "gemini-flash-latest"]
+    
+    for model_name in models_to_try:
         try:
-            ai_text = _get_ai_advice_from_api(prompt, model_name="gemini-2.0-flash")
+            logger.info(f"Attempting to get AI advice with model: {model_name}")
+            ai_text = _get_ai_advice_from_api(prompt, model_name=model_name)
+            if ai_text:
+                logger.info(f"Successfully got AI advice with model: {model_name}")
+                return {"advice": ai_text}
         except Exception as e:
-            # 429 (クォータ制限) や 404 (モデル未対応) の場合、利用可能な最新の Flash モデルを試す
             err_msg = str(e)
-            if "429" in err_msg or "404" in err_msg or "RESOURCE_EXHAUSTED" in err_msg:
-                logger.info(f"Gemini 2.0-flash failed, falling back to gemini-flash-latest: {err_msg[:50]}...")
-                ai_text = _get_ai_advice_from_api(prompt, model_name="gemini-flash-latest")
-            else:
-                raise e
-
-        if ai_text:
-            return {"advice": ai_text}
-        else:
-            return {"advice": generate_fallback_advice(year, month, daily_limit, results, analysis_days)}
+            logger.warning(f"Model {model_name} failed: {err_msg[:100]}")
+            last_error = e
+            # 次のモデルを試す
+            continue
+    
+    # すべてのAIモデルが失敗した場合の例外処理
+    if last_error:
+        e = last_error
+    else:
+        e = Exception("Unknown error while getting AI advice")
+    
+    try:
+        raise e
     except Exception as e:
         error_str = str(e)
         logger.error(f"AI Advice Error: {error_str}")
@@ -508,7 +520,13 @@ def get_ai_advice(year: int, month: int, daily_limit: int, db: Session = Depends
                 "Google APIの無料枠の制限（1分間あたりのリクエスト数、または1日の合計上限）に達しました。\n\n"
                 "**解決策:** 1分ほど待ってから再度ボタンを押すか、上限がリセットされる明日以降に再度お試しください。"
             )
-        elif "API_KEY" in error_str or "403" in error_str:
+        elif "503" in error_str or "UNAVAILABLE" in error_str or "SERVICE_UNAVAILABLE" in error_str:
+            msg = (
+                ":red[【原因: AIサーバーが高負荷状態】]\n\n"
+                "Google Gemini APIサーバーが現在高負荷状態で、一時的に利用できません。\n\n"
+                "**解決策:** 1～2分待ってから再度ボタンを押してください。それでも改善しない場合は、しばらく時間を置いてお試しください。"
+            )
+        elif "API_KEY" in error_str or "403" in error_str or "PERMISSION_DENIED" in error_str:
             msg = (
                 ":red[【原因: APIキーの漏洩または無効化】]\n\n"
                 "お使いのGoogle APIキーが漏洩したと報告されたか、無効化されています。\n\n"
