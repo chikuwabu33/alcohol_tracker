@@ -324,6 +324,7 @@ st.sidebar.number_input(
     "1日の純アルコール限度 (g)",
     min_value=1,
     step=1,
+    value=st.session_state.daily_limit,
     key="daily_limit"
 )
 if st.sidebar.button("目標を保存", use_container_width=True):
