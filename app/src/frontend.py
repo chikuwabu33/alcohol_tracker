@@ -9,6 +9,7 @@ import calendar
 import os
 from io import StringIO
 import json
+import time
 
 # APIサーバーのURLと設定ファイルパス
 BACKEND_URL = os.getenv("BACKEND_URL", "http://backend:8000")
@@ -19,6 +20,7 @@ def save_settings():
     """ユーザー設定（1日の目標量）をバックエンドに保存する"""
     try:
         limit = int(float(st.session_state.daily_limit))
+        st.session_state.daily_limit = limit
         res = requests.post(
             f"{BACKEND_URL}/settings", 
             json={"key": "daily_limit", "value": str(limit)},
@@ -31,17 +33,25 @@ def save_settings():
     except Exception as e:
         st.error(f"バックエンドとの通信に失敗しました: {e}")
 
-def load_settings():
-    """バックエンドから設定値を読み込む。 (値, 成功フラグ) のタプルを返す"""
-    try:
-        res = requests.get(f"{BACKEND_URL}/settings/daily_limit", timeout=5)
-        if res.status_code == 200:
-            return int(float(res.json()["value"])), True
-        if res.status_code == 404:
-            return None, True  # 設定が未登録なだけで、通信自体は成功
-    except Exception as e:
-        print(f"Settings load error: {e}")
-        pass
+def load_settings(retries=3, retry_delay=1.0):
+    """バックエンドから設定値を読み込む。起動直後の通信遅延にも耐えるように複数回試行する。"""
+    last_error = None
+    for attempt in range(retries):
+        try:
+            res = requests.get(f"{BACKEND_URL}/settings/daily_limit", timeout=5)
+            if res.status_code == 200:
+                return int(float(res.json()["value"])), True
+            if res.status_code == 404:
+                return None, True  # 設定が未登録なだけで、通信自体は成功
+            last_error = f"HTTP {res.status_code}: {res.text}"
+        except Exception as e:
+            last_error = str(e)
+
+        if attempt < retries - 1:
+            time.sleep(retry_delay)
+
+    if last_error:
+        print(f"Settings load error: {last_error}")
     return None, False  # 通信失敗など
 
 # アプリの状態を管理する変数の初期化
