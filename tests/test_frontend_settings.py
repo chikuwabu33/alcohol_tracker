@@ -120,3 +120,19 @@ def test_load_settings_returns_saved_value(monkeypatch):
     value, success = frontend.load_settings(retries=1, retry_delay=0)
     assert success is True
     assert value == 42
+
+
+def test_load_settings_falls_back_to_persisted_file(monkeypatch, tmp_path):
+    settings_path = tmp_path / "settings.json"
+    settings_path.write_text('{"daily_limit": 35}', encoding="utf-8")
+
+    monkeypatch.setattr(frontend, "SETTINGS_PATH", str(settings_path))
+
+    def fake_get(url, timeout=5):
+        raise ConnectionError("backend unavailable")
+
+    monkeypatch.setattr(frontend.requests, "get", fake_get)
+
+    value, success = frontend.load_settings(retries=1, retry_delay=0)
+    assert success is True
+    assert value == 35
