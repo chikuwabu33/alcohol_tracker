@@ -13,28 +13,75 @@ import time
 
 # APIサーバーのURLと設定ファイルパス
 BACKEND_URL = os.getenv("BACKEND_URL", "http://backend:8000")
+DEFAULT_DAILY_LIMIT = 20
+SETTINGS_PATH = os.getenv(
+    "SETTINGS_PATH",
+    os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "settings.json")),
+)
 
 st.set_page_config(page_title="Alcohol Tracker", page_icon="🍺", layout="wide")
+
+def get_settings_file_path():
+    """設定の永続化先を決定する。明示的な SETTINGS_PATH を優先して使う。"""
+    if SETTINGS_PATH:
+        return SETTINGS_PATH
+    default_path = os.path.abspath(os.path.join(os.getcwd(), "settings.json"))
+    return default_path
+
+
+def read_persisted_settings():
+    """保存済みの設定ファイルを読み込む。存在しない場合は None を返す."""
+    path = get_settings_file_path()
+    try:
+        if not os.path.exists(path):
+            return None
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if isinstance(data, dict):
+            value = data.get("daily_limit")
+            if value is not None:
+                return int(float(value))
+    except (FileNotFoundError, TypeError, ValueError, json.JSONDecodeError):
+        return None
+    return None
+
+
+def write_persisted_settings(value):
+    """設定ファイルに値を書き込む。バックエンドが使えない環境でも復元できるようにする。"""
+    path = get_settings_file_path()
+    try:
+        directory = os.path.dirname(path)
+        if directory and not os.path.exists(directory):
+            os.makedirs(directory, exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump({"daily_limit": int(value)}, f, ensure_ascii=False)
+    except OSError:
+        pass
+
 
 def save_settings():
     """ユーザー設定（1日の目標量）をバックエンドに保存する"""
     try:
         limit = int(float(st.session_state.daily_limit))
-        st.session_state.daily_limit = limit
+        # Do not reassign `st.session_state.daily_limit` here —
+        # the widget with key "daily_limit" already manages this value.
+        write_persisted_settings(limit)
         res = requests.post(
-            f"{BACKEND_URL}/settings", 
+            f"{BACKEND_URL}/settings",
             json={"key": "daily_limit", "value": str(limit)},
-            timeout=5
+            timeout=5,
         )
         if res.status_code != 200:
             st.error(f"設定の保存に失敗しました: {res.text}")
         else:
             st.toast(f"目標値を {limit}g に更新しました 🎯")
     except Exception as e:
+        write_persisted_settings(st.session_state.daily_limit)
         st.error(f"バックエンドとの通信に失敗しました: {e}")
 
+
 def load_settings(retries=3, retry_delay=1.0):
-    """バックエンドから設定値を読み込む。起動直後の通信遅延にも耐えるように複数回試行する。"""
+    """バックエンドから設定値を読み込む。失敗時はローカル設定ファイルを参照する。"""
     last_error = None
     for attempt in range(retries):
         try:
@@ -42,7 +89,7 @@ def load_settings(retries=3, retry_delay=1.0):
             if res.status_code == 200:
                 return int(float(res.json()["value"])), True
             if res.status_code == 404:
-                return None, True  # 設定が未登録なだけで、通信自体は成功
+                break
             last_error = f"HTTP {res.status_code}: {res.text}"
         except Exception as e:
             last_error = str(e)
@@ -50,15 +97,18 @@ def load_settings(retries=3, retry_delay=1.0):
         if attempt < retries - 1:
             time.sleep(retry_delay)
 
+    persisted = read_persisted_settings()
+    if persisted is not None:
+        return persisted, True
+
     if last_error:
         print(f"Settings load error: {last_error}")
-    return None, False  # 通信失敗など
+    return DEFAULT_DAILY_LIMIT, True
 
 # アプリの状態を管理する変数の初期化
 if "daily_limit" not in st.session_state:
     val, success = load_settings()
-    # 取得に成功し、かつ値が存在する場合はその値を使用。それ以外は20を初期値として設定。
-    st.session_state.daily_limit = val if (success and val is not None) else 20
+    st.session_state.daily_limit = val if success and val is not None else DEFAULT_DAILY_LIMIT
 
 # タイムゾーン考慮した今日の日付
 today = datetime.now(ZoneInfo("Asia/Tokyo")).date()
