@@ -63,7 +63,8 @@ def save_settings():
     """ユーザー設定（1日の目標量）をバックエンドに保存する"""
     try:
         limit = int(float(st.session_state.daily_limit))
-        st.session_state.daily_limit = limit
+        # Do not reassign `st.session_state.daily_limit` here —
+        # the widget with key "daily_limit" already manages this value.
         write_persisted_settings(limit)
         res = requests.post(
             f"{BACKEND_URL}/settings",
